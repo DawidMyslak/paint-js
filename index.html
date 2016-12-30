@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        #myCanvas {
+            background-color: #efefef;
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="myCanvas" width="1000" height="600"></canvas>
+
+    <script>
+        (function () {
+            function drawPixel(canvas, imageData, position, color) {
+                var x = position.x;
+                var y = position.y;
+                var r = color.r;
+                var g = color.g;
+                var b = color.b;
+                var a = color.a;
+
+                if (x < 0 || x >= canvas.width || y < 0 || y >= canvas.height) {
+                    return;
+                }
+
+                var index = (x + y * canvas.width) * 4;
+
+                imageData.data[index + 0] = r;
+                imageData.data[index + 1] = g;
+                imageData.data[index + 2] = b;
+
+                if (imageData.data[index + 3] + a > 255) {
+                    imageData.data[index + 3] = 255;
+                }
+                else {
+                    imageData.data[index + 3] = imageData.data[index + 3] + a;
+                }
+            }
+
+            function updateCanvas(context, imageData) {
+                context.putImageData(imageData, 0, 0);
+            }
+
+            function paintWithBrush(canvas, imageData, position) {
+                var brushSize = 9;
+                var brushStrength = 0.2;
+                var brushMap = [
+                    [0.0, 0.1, 0.2, 0.4, 0.4, 0.4, 0.2, 0.1, 0.0],
+                    [0.1, 0.3, 0.5, 0.6, 0.6, 0.6, 0.5, 0.3, 0.1],
+                    [0.2, 0.5, 0.7, 0.8, 0.8, 0.8, 0.7, 0.5, 0.2],
+                    [0.4, 0.6, 0.8, 0.9, 1.0, 0.9, 0.8, 0.6, 0.4],
+                    [0.4, 0.6, 0.8, 1.0, 1.0, 1.0, 0.8, 0.6, 0.4],
+                    [0.4, 0.6, 0.8, 0.9, 1.0, 0.9, 0.8, 0.6, 0.4],
+                    [0.2, 0.5, 0.7, 0.8, 0.8, 0.8, 0.7, 0.5, 0.2],
+                    [0.1, 0.3, 0.5, 0.6, 0.6, 0.6, 0.5, 0.3, 0.1],
+                    [0.0, 0.1, 0.2, 0.4, 0.4, 0.4, 0.2, 0.1, 0.0]
+                ];
+
+                for (var i = 0; i < brushSize; i++) {
+                    for (var j = 0; j < brushSize; j++) {
+                        var brushPosition = {
+                            x: position.x + j - parseInt(brushSize / 2),
+                            y: position.y + i - parseInt(brushSize / 2)
+                        };
+                        var brushColor = {
+                            r: 20,
+                            g: 100,
+                            b: 200,
+                            a: parseInt(brushMap[i][j] * brushStrength * 255)
+                        };
+
+                        drawPixel(canvas, imageData, brushPosition, brushColor);
+                    }
+                }
+            }
+
+            function getMousePosition(event, boundingClientRect) {
+                return {
+                    x: event.clientX - boundingClientRect.left,
+                    y: event.clientY - boundingClientRect.top
+                };
+            }
+
+            function paintInterpolatedBrushLine(canvas, imageData, mousePosition, lastMousePosition) {
+                /*
+                    x1, y1 -> mousePosition.x, mousePosition.y
+                    x2, y2 -> lastMousePosition.x, lastMousePosition.y
+
+                    y = a * x + b
+                    x = (y - b) / a
+
+                    y1 = a * x1 + b
+                    y2 = a * x2 + b
+
+                    y1 - a * x1 = y2 - a * x2
+                    y1 - a * x1 - y2 + a * x2 = 0
+                    a * (-x1 + x2) + y1 - y2 = 0
+                    a = (-y1 + y2) / (-x1 + x2)
+                    b = y1 - a * x1
+                */
+
+                var a, b;
+                var isVerticalLine = false;
+
+                if (-mousePosition.x + lastMousePosition.x === 0) {
+                    isVerticalLine = true;
+                }
+                else {
+                    a = (-mousePosition.y + lastMousePosition.y) / (-mousePosition.x + lastMousePosition.x);
+                    b = mousePosition.y - a * mousePosition.x;
+                }
+
+                var startX = lastMousePosition.x;
+                var endX = mousePosition.x;
+                var startY = lastMousePosition.y;
+                var endY = mousePosition.y;
+
+                if (lastMousePosition.x > mousePosition.x) {
+                    startX = mousePosition.x;
+                    endX = lastMousePosition.x;
+                }
+
+                if (lastMousePosition.y > mousePosition.y) {
+                    startY = mousePosition.y;
+                    endY = lastMousePosition.y;
+                }
+
+                if (endX - startX >= endY - startY) {
+                    var x = startX;
+                    while (x <= endX) {
+                        var interpolatedPosition = {};
+                        interpolatedPosition.x = x;
+                        interpolatedPosition.y = parseInt(a * x + b);
+                        paintWithBrush(canvas, imageData, interpolatedPosition);
+                        x++;
+                    }
+                }
+                else {
+                    var y = startY;
+                    while (y <= endY) {
+                        var interpolatedPosition = {};
+                        if (!isVerticalLine) {
+                            interpolatedPosition.x = parseInt((y - b) / a);
+                            interpolatedPosition.y = y;
+                        }
+                        else {
+                            interpolatedPosition.x = mousePosition.x;
+                            interpolatedPosition.y = y;
+                        }
+                        paintWithBrush(canvas, imageData, interpolatedPosition);
+                        y++;
+                    }
+                }
+            }
+
+            var _canvas = document.getElementById("myCanvas");
+            var _context = _canvas.getContext("2d");
+            var _boundingClientRect = _canvas.getBoundingClientRect();
+            var _imageData = _context.getImageData(0, 0, _canvas.width, _canvas.height);
+            var _lastMousePosition = null;
+            var _shouldPaint = false;
+
+            _canvas.addEventListener('mousedown', function (event) {
+                var mousePosition = getMousePosition(event, _boundingClientRect);
+                paintWithBrush(_canvas, _imageData, mousePosition);
+                updateCanvas(_context, _imageData);
+                _lastMousePosition = mousePosition;
+                _shouldPaint = true;
+            });
+
+            _canvas.addEventListener('mouseup', function (event) {
+                _shouldPaint = false;
+            });
+
+            _canvas.addEventListener('mouseleave', function (event) {
+                _shouldPaint = false;
+            });
+
+            _canvas.addEventListener('mousemove', function (event) {
+                if (_shouldPaint) {
+                    var mousePosition = getMousePosition(event, _boundingClientRect);
+                    paintInterpolatedBrushLine(_canvas, _imageData, mousePosition, _lastMousePosition)
+                    updateCanvas(_context, _imageData);
+                }
+                _lastMousePosition = mousePosition;
+            });
+        })();
+    </script>
+
+</body>
+
+</html>
